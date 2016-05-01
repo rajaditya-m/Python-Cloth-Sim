@@ -6,10 +6,14 @@ import sys, os, traceback
 if sys.platform == 'win32' or sys.platform == 'win64':
     os.environ['SDL_VIDEO_CENTERED'] = '1'
 from math import *
+import numpy as np
+
+
+
 pygame.display.init()
 pygame.font.init()
 
-screen_size = [800,600]
+screen_size = [1280,720]
 multisample = 16
 icon = pygame.Surface((1,1)); icon.set_alpha(0); pygame.display.set_icon(icon)
 pygame.display.set_caption("Simple Demo")
@@ -32,6 +36,9 @@ glPointSize(4)
 
 def subtract(vec1,vec2):
     return [vec1[i]-vec2[i] for i in [0,1,2]]
+
+def add(vec1,vec2):
+     return [vec1[i]+vec2[i] for i in [0,1,2]]
 
 def get_length(vec):
     return sum([vec[i]*vec[i] for i in [0,1,2]])**0.5
@@ -71,12 +78,39 @@ def objreader(filename):
             triTextList.append(eltritext)
             triNormalList.append(eltrinorm)
 
-    return [vertList,triList,triTextList,triNormalList]
+    numpy_vertList = np.array(vertList)
+    numpy_triList = np.array(triList)
+    numpy_triTextList = np.array(triTextList)
+    numpy_triNormalList = np.array(triNormalList)
+
+    return [numpy_vertList,numpy_triList,numpy_triTextList,numpy_triNormalList]
 
 class MassSpringCloth(object):
     def __init__(self,filename):
         [self.vertList,self.triList,triTextList,triNormalList] = objreader(filename)
         self.numTris = len(self.triList)/3
+
+    def draw_wireframe(self):
+
+        #points in red
+        glColor3f(1.0,0.0,0.0)
+        glBegin(GL_POINTS)
+        for particle in self.vertList:
+            glVertex3fv(particle)
+        glEnd()
+
+        glColor3f(1.0,1.0,1.0)
+        glBegin(GL_LINES)
+        for x in self.triList:
+            glVertex3fv(self.vertList[x[0]])
+            glVertex3fv(self.vertList[x[1]])
+            glVertex3fv(self.vertList[x[0]])
+            glVertex3fv(self.vertList[x[2]])
+            glVertex3fv(self.vertList[x[1]])
+            glVertex3fv(self.vertList[x[2]])
+        glEnd()
+
+
 
 
 
@@ -89,7 +123,8 @@ class MassSpringCloth(object):
         glEnd()
 
     def update(self):
-        dummy = 0
+        for i in range(0,len(self.vertList)):
+            np.add(self.vertList[i],np.array([0.0,-0.1,0.0]),self.vertList[i])
 
        
 
@@ -245,8 +280,8 @@ gravity = -9.8
 cloth = ClothCPU(30)
 mspcloth = MassSpringCloth('flat_cloth.obj')
 
-camera_rot = [0,0]#[70,23]
-camera_radius = 10.5 #2.5
+camera_rot = [-90,-40]#[70,23]
+camera_radius = 14.5 #2.5
 camera_center = [0,0,0]#[0.5,0.5,0.5]
 
 #these are ancilliary functions that we are writing for our help 
@@ -297,13 +332,14 @@ def draw():
 
     #cloth.draw_mesh()
 
-    glColor3f(0,0.2,0)
+    glColor3f(1,1,1)
     #cloth.draw_wireframe()
 
-    mspcloth.draw_mesh()
+    #mspcloth.draw_mesh()
+    mspcloth.draw_wireframe()
 
 
-    glColor3f(1,0,0)
+    #glColor3f(1,0,0)
     # glBegin(GL_LINES)
     # points = []
     # for x in [0,1]:
