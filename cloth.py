@@ -85,9 +85,65 @@ def objreader(filename):
 
     return [numpy_vertList,numpy_triList,numpy_triTextList,numpy_triNormalList]
 
+def edgeinformation(triList):
+    #Lets make a set DS class 
+    edge_dict = dict()
+    for t in range(0,len(triList)):
+        a = triList[t][0]
+        b = triList[t][1]
+        c = triList[t][2]
+        
+        if(a<b):
+            e1 = [a,b]
+        else:
+            e2 = [b,a]
+
+        if(a<c):
+            e2 = [a,c]
+        else:
+            e2 = [c,a]
+
+        if(b<c):
+            e3 = [b,c]
+        else:
+            e3 = [c,b]
+
+        if tuple(e1) in edge_dict:
+            pair_list = edge_dict[tuple(e1)]
+            edge_dict[tuple(e1)] = [pair_list[0],t]
+        else:
+            edge_dict[tuple(e1)] = [t,-1]
+
+        if tuple(e2) in edge_dict:
+            pair_list = edge_dict[tuple(e2)]
+            edge_dict[tuple(e2)] = [pair_list[0],t]
+        else:
+            edge_dict[tuple(e2)] = [t,-1]
+
+        if tuple(e3) in edge_dict:
+            pair_list = edge_dict[tuple(e3)]
+            edge_dict[tuple(e3)] = [pair_list[0],t]
+        else:
+            edge_dict[tuple(e3)] = [t,-1]
+
+    return edge_dict    
+
+
+
+
+
+
+
+
+
+
 class MassSpringCloth(object):
     def __init__(self,filename):
+
         [self.vertList,self.triList,triTextList,triNormalList] = objreader(filename)
+
+        self.edgeDict = edgeinformation(self.triList)
+
         self.numTris = len(self.triList)/3
 
     def draw_wireframe(self):
@@ -101,18 +157,10 @@ class MassSpringCloth(object):
 
         glColor3f(1.0,1.0,1.0)
         glBegin(GL_LINES)
-        for x in self.triList:
+        for x in self.edgeDict:
             glVertex3fv(self.vertList[x[0]])
             glVertex3fv(self.vertList[x[1]])
-            glVertex3fv(self.vertList[x[0]])
-            glVertex3fv(self.vertList[x[2]])
-            glVertex3fv(self.vertList[x[1]])
-            glVertex3fv(self.vertList[x[2]])
         glEnd()
-
-
-
-
 
     def draw_mesh(self):
         glBegin(GL_TRIANGLES)
