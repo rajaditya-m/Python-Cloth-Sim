@@ -7,7 +7,12 @@ if sys.platform == 'win32' or sys.platform == 'win64':
     os.environ['SDL_VIDEO_CENTERED'] = '1'
 from math import *
 import numpy as np
+#import random
 
+from scipy import sparse
+#from scipy.sparse.linalg import spsolve
+from numpy.linalg import solve, norm
+from numpy.random import rand
 
 
 pygame.display.init()
@@ -128,10 +133,51 @@ def edgeinformation(triList):
 
     return edge_dict    
 
+def generateSprings(edgeDict,triList,vertList):
+    stretchSprings = []
+    restLenStretchSprings = []
+    bendingSprings = []
+    restLenBendingSprings = []
+
+    for key in edgeDict:
+        stretchSprings.append([key[0],key[1]])
+        v1 = vertList[key[0]]
+        v2 = vertList[key[1]]
+        restLen = np.linalg.norm(v1-v2)
+        restLenStretchSprings.append(restLen)
+
+        #now we will check if the spring is a bending spring candidate 
+        value = edgeDict[key]
+        if(value[0]!=-1 and value[1]!=-1):
+
+            l1 = triList[value[0]]
+            l2 = triList[value[1]]
+
+            l1 = np.delete(l1,np.where(l1==key[0]))
+            l1 = np.delete(l1,np.where(l1==key[1]))
+
+            l2 = np.delete(l2,np.where(l2==key[0]))
+            l2 = np.delete(l2,np.where(l2==key[1]))
+
+            bendingSprings.append([l1[0],l2[0]])
+            v1 = vertList[l1[0]]
+            v2 = vertList[l2[0]]
+            restLen  = np.linalg.norm(v1-v2)
+
+            restLenBendingSprings.append(restLen)
+
+    return [stretchSprings,restLenStretchSprings,bendingSprings,restLenBendingSprings]
 
 
 
-
+def add3x3MatrixBlockToCOOSparseMatrixVector(vector,tupletable,mat,a,b):
+    for i in range(0,3):
+        for j in range(0,3):
+            r = a+i
+            c = b+j
+            loc = tupletable[tuple([a,b])]
+            vector[loc] = vector[loc] + mat(a,b)
+            
 
 
 
@@ -144,7 +190,131 @@ class MassSpringCloth(object):
 
         self.edgeDict = edgeinformation(self.triList)
 
-        self.numTris = len(self.triList)/3
+        [self.stretchSprings,self.restLenStretchSprings,self.bendingSprings,self.restLenBendingSprings] = generateSprings(self.edgeDict,self.triList,self.vertList)
+
+        self.numTris = len(self.triList)
+
+        self.numVerts = len(self.vertList)
+
+        self.n3 = self.numVerts*3
+
+        velList = [[0,0,0]]*self.numVerts
+
+        self.velocity = np.array(velList)
+
+        self.defineCOOSparsityStructures()
+
+        
+
+
+    #def addStretchSpringForcesAndJacobians():
+
+
+    def defineCOOSparsityStructures(self):
+        K_I = []
+        K_J = []
+        self.stiffness_Matrix_Dict = dict()
+        counter = 0
+
+        #first initialize the diagonal 3x3 matrices 
+        for i in range(0,self.numVerts):
+            for j in range(0,3):
+                for k in range(0,3):
+                    K_I.append(3*i+j)
+                    K_J.append(3*i+k)
+                    self.stiffness_Matrix_Dict[tuple([3*i+j,3*i+k])] = counter
+                    counter += 1
+
+        #Next initialize the stretch 3x3 matrices
+        for i in self.stretchSprings:
+            v1 = i[0]
+            v2 = i[1]
+            for j in range(0,3):
+                for k in range(0,3):
+                    K_I.append(3*v1+j)
+                    K_J.append(3*v2+k)
+                    self.stiffness_Matrix_Dict[tuple([3*v1+j,3*v2+k])] = counter
+                    counter += 1
+
+            for j in range(0,3):
+                for k in range(0,3):
+                    K_I.append(3*v2+j)
+                    K_J.append(3*v1+k)
+                    self.stiffness_Matrix_Dict[tuple([3*v2+j,3*v1+k])] = counter
+                    counter += 1
+
+        #Next initialize the bending 3x3 matrices
+        for i in self.bendingSprings:
+            v1 = i[0]
+            v2 = i[1]
+            for j in range(0,3):
+                for k in range(0,3):
+                    K_I.append(3*v1+j)
+                    K_J.append(3*v2+k)
+                    self.stiffness_Matrix_Dict[tuple([3*v1+j,3*v2+k])] = counter
+                    counter += 1
+
+            for j in range(0,3):
+                for k in range(0,3):
+                    K_I.append(3*v2+j)
+                    K_J.append(3*v1+k)
+                    self.stiffness_Matrix_Dict[tuple([3*v2+j,3*v1+k])] = counter
+                    counter += 1
+
+        self.stiffnessMatrix_I = np.array(K_I)
+        self.stiffnessMatrix_J = np.array(K_J)
+
+
+
+    def addSpringForcesAndJacobians(self):
+        k = 100.0
+        kd = 0.001
+        kb = 0.1
+        cb = k
+        I = np.identity(3)
+        h = 0.033
+
+        for idx in range(0,3):#len(bendingSprings)):
+            i = self.bendingSprings[idx][0]
+            j = self.bendingSprings[idx][1]
+            r = self.restLenBendingSprings[idx]
+
+            xi = self.vertList[i]
+            xj = self.vertList[j]
+
+            vi = self.velocity[i]
+            vj = self.velocity[j]
+
+            xij = xi - xj
+            vij = vi - vj
+
+            xij_norm = np.linalg.norm(xij)
+            xij_hat = xij/xij_norm
+
+            if(1):#(xij_norm>r):
+                f_i = (-k)*(xij_norm-r)*xij_hat
+                f_j = -f_i
+
+                outerPdk = np.outer(xij_hat,xij_hat)
+                J_Fi_xi = outerPdk + (1.0-(r/xij_norm))*(I - outerPdk)
+                J_Fi_xi = J_Fi_xi * (-k)
+                J_Fj_xi = -J_Fi_xi
+
+                df_dx_i = h*(J_Fi_xi * vi + J_Fj_xi * vj)
+                df_dx_j = h*(J_Fj_xi * vi + J_Fi_xi * vj)
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def draw_wireframe(self):
 
@@ -155,9 +325,16 @@ class MassSpringCloth(object):
             glVertex3fv(particle)
         glEnd()
 
-        glColor3f(1.0,1.0,1.0)
+        glColor3f(0.0,0.0,1.0)
         glBegin(GL_LINES)
-        for x in self.edgeDict:
+        for x in self.stretchSprings:
+            glVertex3fv(self.vertList[x[0]])
+            glVertex3fv(self.vertList[x[1]])
+        glEnd()
+
+        glColor3f(0.0,1.0,0.0)
+        glBegin(GL_LINES)
+        for x in self.bendingSprings:
             glVertex3fv(self.vertList[x[0]])
             glVertex3fv(self.vertList[x[1]])
         glEnd()
@@ -171,6 +348,14 @@ class MassSpringCloth(object):
         glEnd()
 
     def update(self):
+        #DUMMY = 0
+
+        self.addSpringForcesAndJacobians()
+
+        #stiffness_Matrix_V = [0]*self.n3
+        stiffness_Matrix_V = rand(len(self.stiffnessMatrix_I))
+        A = sparse.coo_matrix((stiffness_Matrix_V,(self.stiffnessMatrix_I,self.stiffnessMatrix_J)),shape=(self.n3,self.n3))
+
         for i in range(0,len(self.vertList)):
             np.add(self.vertList[i],np.array([0.0,-0.1,0.0]),self.vertList[i])
 
